@@ -1,2 +1,163 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Projeto 2 - Automação Web
+
+## Dessafio:
+'''
+- Entrar em dois sites - Buscapé e Google Shopping
+- Pesquisar uma Série de Produtos a serem comprados
+- Verificar se os Produtos estão dentro da Faixa de Preço Rasoável
+- Armazenar o Link dos Produtos numa Tabela
+- Enviar a Tabela para o E-mail: brawlshacher+supervisor@gmail.com
+'''
+
+# Importar as Bibliotecas
+# !pip install selenium
+# !pip install win32com.client
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+import pandas as pd
+import time
+from datetime import datetime
+import win32com.client as win32
+
+# Criando uma Função que Trasforma texto em Número
+def tratar_numeros(valor):
+    valor = valor.text
+    valor = valor.replace("R$ ", "").replace(".", "").replace(",", ".")
+    valor = valor.strip()
+    try:
+        valor = float(valor)
+    except:
+        valor = 0
+    return valor
+
+# Importar a Base de Dados
+produtos = pd.read_excel("Cópia de Buscas.xlsx")
+# display(produtos)
+
+# Iniciar o Navegador
+servico = Service(r'C:\Users\Downloads\chromedriver.exe')
+driver = webdriver.Chrome(service=servico)
+
+# Iniciando as Listas
+lista_google_shopping = []
+lista_buscape = []
+
+for produto in produtos["Nome"]:
+    produto = produto.lower()
+
+    # Entrar no Site do Google Shopping
+    driver.get("https://shopping.google.com.br/?pli=1")
+
+    # Esperar a Barra de Busca Aparecer
+    while len(driver.find_elements(By.XPATH, '//*[@id="REsRA"]')) < 1:
+        time.sleep(1)
+    time.sleep(1)
+    driver.find_element(By.XPATH, '//*[@id="REsRA"]').send_keys(produto, Keys.ENTER)
+
+    # Esperar os Produtos Aparecerem
+    while len(driver.find_elements(By.CLASS_NAME, 'KZmu8e')) < 1:
+        time.sleep(1)
+    time.sleep(1)
+
+    # Pegar a Lista de Elementos
+    lista_elementos = driver.find_elements(By.CLASS_NAME, 'KZmu8e')
+    for i, elemento in enumerate(lista_elementos):
+        # Pegar a Lista de Preços e Nomes
+        preco = tratar_numeros(elemento.find_element(By.CLASS_NAME, 'T14wmb'))
+        link = elemento.find_element(By.CLASS_NAME, 'shntl').get_attribute("href")
+        nome = elemento.find_element(By.CLASS_NAME, 'sh-np__product-title').text.lower()
+        # Verificar os Preços
+        if float(produtos.loc[produtos["Nome"]==produto, "Preço mínimo"].values[0]) <= preco <= float(produtos.loc[produtos["Nome"]==produto, "Preço máximo"].values[0]):
+            # Verificar os Termos Banidos
+            termos_banidos = False
+            lista_banidos = produtos.loc[produtos["Nome"]==produto, "Termos banidos"].values[0].lower().split(" ")
+            for banido in lista_banidos:
+                if banido in nome:
+                    termos_banido = True
+
+            # Verificar o Nome do Produto
+            termos_nome_produto = True
+            lista_nomes_produtos = produtos.loc[produtos["Nome"]==produto, "Nome"].values[0].lower().split(" ")
+            for palavra in lista_nomes_produtos:
+                if palavra not in nome:
+                    termos_nome_produto = False
+
+            if termos_banidos == False and termos_nome_produto == True:
+                # Pegar a Lista de Tuplas
+                tupla = (nome, preco, link)
+                lista_google_shopping.append(tupla)
+
+
+    # Entrar no Site do Bucapé
+    driver.get("https://www.buscape.com.br/")
+
+    # Selecionar a Barra de Pesquisa
+    while len(driver.find_elements(By.XPATH, '//*[@id="new-header"]/div[1]/div/div/div[3]/div/div/div[2]/div/div[1]/input')) < 1:
+        time.sleep(1)
+    time.sleep(1)
+    driver.find_element(By.XPATH, '//*[@id="new-header"]/div[1]/div/div/div[3]/div/div/div[2]/div/div[1]/input').send_keys(produto, Keys.ENTER)
+
+    # Esperar os Produtos Aparecerem
+    while len(driver.find_elements(By.CLASS_NAME, 'SearchCard_ProductCard_Inner__7JhKb')) < 1:
+        time.sleep(1)
+    time.sleep(1)
+    lista_elementos = driver.find_elements(By.CLASS_NAME, 'SearchCard_ProductCard_Inner__7JhKb')
+    for i, elemento in enumerate(lista_elementos):
+        nome = elemento.find_element(By.CLASS_NAME, 'Text_Text__h_AF6').text
+        preco = tratar_numeros(elemento.find_element(By.CLASS_NAME, 'Text_MobileHeadingS__Zxam2'))
+        filho_link = elemento.find_element(By.CLASS_NAME, 'SearchCard_ProductCard_Body__2wM_H')
+        link = filho_link.find_element(By.XPATH, '..').get_attribute("href")
+
+        # Verificar os Preços
+        if float(produtos.loc[produtos["Nome"]==produto, "Preço mínimo"].values[0]) <= preco <= float(produtos.loc[produtos["Nome"]==produto, "Preço máximo"].values[0]):
+            # Verificar os Termos Banidos
+            termos_banidos = False
+            lista_banidos = produtos.loc[produtos["Nome"]==produto, "Termos banidos"].values[0].lower().split(" ")
+            for banido in lista_banidos:
+                if banido in nome:
+                    termos_banido = True
+
+            # Verificar o Nome do Produto
+            termos_nome_produto = True
+            lista_nomes_produtos = produtos.loc[produtos["Nome"]==produto, "Nome"].values[0].lower().split(" ")
+            for palavra in lista_nomes_produtos:
+                if palavra not in nome:
+                    termos_nome_produto = False
+
+            if termos_banidos == False and termos_nome_produto == True:
+                # Pegar a Lista de Tuplas
+                tupla = (nome, preco, link)
+                lista_buscape.append(tupla)
+                print("sim")
+
+# Fechar o Google Chrome
+driver.close()
+# Colocar a Tabela_Final em Excel
+tabela_google_shopping = pd.DataFrame(lista_google_shopping, columns=["Nome", "Preço", "Link"])
+tabela_buscape = pd.DataFrame(lista_buscape, columns=["Nome", "Preço", "Link"])
+tabela_google_shopping.to_excel("tabela_google_shopping.xlsx")
+tabela_buscape.to_excel("tabela_buscape.xlsx")
+
+# Enviar para Supervisor
+hoje = datetime.now()
+
+outlook = win32.Dispatch('outlook.application')
+mail = outlook.CreateItem(0)
+mail.To = 'brawlshacher+supervisor@gmail.com'
+mail.Subject = f'Tabela Automática de Produtos do dia{hoje.day}/{hoje.month}'
+mail.Body = """Olá Supervisor,
+Segue em Anexo as Tabelas dos Produtos, qualquer dúvida é só entrar em Contato,
+atts Rodrigo Coradini.
+"""
+# Anexos
+attachment  = r'C://Users/Eliza/Documents/tabela_google_shopping.xlsx'
+mail.Attachments.Add(attachment)
+attachment  = r'C://Users/Eliza/Documents/tabela_buscape.xlsx'
+mail.Attachments.Add(attachment)
+mail.Send()
+print("E-mail Enviado com Sucesso!!!")
+display(tabela_google_shopping)
+display(tabela_buscape)
+
